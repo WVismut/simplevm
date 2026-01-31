@@ -6,18 +6,22 @@
 struct VirtualMachine {
     uint8_t ram[8128];
     uint8_t stack[256];
+
+    // vm uses the regs[15] register for division reminder
+    // vm uses the regs[14] register for printing strings 
     uint8_t regs[16];
     uint8_t flags;
-    int pc;
-    int sp; // stack pointer
-    int bp; // base pointer
-};
+    uint16_t pc; // program counter
+    uint16_t dc; // data counter, vm uses it for printing strings/iterating
+    uint8_t sp; // stack pointer
+    uint8_t bp; // base 
 
-int main() {
+int main(int argc, char *argv[]) {
     // variables for interptitation
     int medium;
     int div_remainder;
     uint16_t opcode;
+    int text_section_start;
 
     // initialize VMs state
     struct VirtualMachine vm;
@@ -27,15 +31,10 @@ int main() {
 
     // get program data
     FILE* file = NULL;
-    char name[256];
     size_t size;
 
-    printf("Please, enter the name of the file (255 symbols max): ");
-    fgets(name, sizeof(name), stdin);
-    name[strcspn(name, "\n")] = 0; // add null-terminator to filename
-
     // get files size
-    file = fopen(name, "rb");
+    file = fopen(argv[1], "rb");
     fseek(file, 0, SEEK_END);
     size = ftell(file);
     rewind(file);
@@ -46,6 +45,15 @@ int main() {
 
     // load ram
     fread(vm.ram, 1, size, file);
+
+    // get position of code section
+    // everything before code section is interpreted as data section
+    // in the data section you can store any data, null-terminated strings for example
+    opcode = vm.ram[vm.pc] << 8 | vm.ram[vm.pc + 1];
+
+    text_section_start = opcode;
+    vm.pc = text_section_start;
+
     while (1) {
         opcode = vm.ram[vm.pc] << 8 | vm.ram[vm.pc + 1]; // each opcode is 2 bytes just like in CHIP-8
         vm.pc += 2; // increase program counter
@@ -149,28 +157,28 @@ int main() {
                 vm.regs[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
                 break;
             case 0x3000: // jumps
-                switch (opcode & 0x0F00) {
-                    case 0x0000: // jump to opcode if cmp flag is set to one
-                        /*
-                        0x30nn
-                        nn - opcode nummber to jump
-                        */
-                        if (((vm.flags & 0b00010000) >> 4) == 1) {
-                            vm.pc = ((opcode & 0x00FF) * 2);
-                            vm.flags ^= 0b00010000;
-                        }
-                        break;
-                    case 0x0100:
-                        /*
-                        0x30nn
-                        nn - opcode nummber to jump
-                        */
-                        if (((vm.flags & 0b00010000) >> 4) == 1) {
-                            vm.pc = ((opcode & 0x00FF) * 2);
-                            vm.flags ^= 0b00010000;
-                        }
-                        break;
+                /*
+                0x3nnn
+                nn - opcode nummber to jump
+                */
+                if (((vm.flags & 0b00010000) >> 4) == 1) {
+                    vm.pc = (opcode & 0x0FFF);
+                    vm.flags ^= 0b00010000;
                 }
+                break;
+            case 0x4000: // print a null terminated string
+                /*
+                0x4nnn
+                nnn - addres of first element of null terminated string
+                */
+                vm.regs[14] = vm.ram[(opcode & 0x0FFF)];
+                vm.dc = 1;
+                while (vm.regs[14] != 0x00) {
+                    printf("%c", vm.regs[14]);
+                    vm.regs[14] = vm.ram[(opcode & 0x0FFF) + vm.dc];
+                    vm.dc++;
+                }
+                break;
         }
     }
     
