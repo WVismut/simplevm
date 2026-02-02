@@ -2,21 +2,36 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
+
+#define RESET   "\033[0m"
+#define RED     "\033[0;31m"
+#define GREEN   "\033[0;32m"
+#define YELLOW  "\033[0;33m"
+#define BLUE    "\033[0;34m"
+#define MAGENTA "\033[0;35m"
+#define CYAN    "\033[0;36m"
+#define WHITE   "\033[0;37m"
 
 struct VirtualMachine {
-    uint8_t ram[8128];
-    uint8_t stack[256];
+    uint8_t ram[4096];
 
     // vm uses the regs[15] register for division reminder
     // vm uses the regs[14] register for printing strings 
     uint8_t regs[16];
+    uint16_t addres_call_reg; // register used for adsresses
     uint8_t flags;
     uint16_t pc; // program counter
     uint16_t dc; // data counter, vm uses it for printing strings/iterating
-    uint8_t sp; // stack pointer
-    uint8_t bp; // base 
+    uint16_t sp; // stack pointer
+    uint16_t heap_p; // pointer to heap;
+};
 
 int main(int argc, char *argv[]) {
+    // sys variables
+    char filename[128];
+    bool debug;
+
     // variables for interptitation
     int medium;
     int div_remainder;
@@ -25,16 +40,35 @@ int main(int argc, char *argv[]) {
 
     // initialize VMs state
     struct VirtualMachine vm;
-    memset(vm.ram, 0, 8128);
+    memset(vm.ram, 0, 4096);
     memset(vm.regs, 0, 16);
     vm.pc = 0;
+
+    // fetch arguments
+    for (int i = 1; i < argc; i++) {
+        if ((strcmp(argv[i], "-n") == 0) | (strcmp(argv[i], "--name") == 0))
+            if (argc < i + 2) {
+                printf("Fatal error: no filename provided\n");
+                exit(1);
+            } else {
+                strcpy(filename, argv[i + 1]);
+                i++;
+            }
+        else if ((strcmp(argv[i], "-d") == 0) | (strcmp(argv[i], "--debug") == 0))
+            debug = true;
+        else {
+            // i dont know how to nake this message "normal"
+            printf("Invalid argument: %s\nHere are valid arguments:\n-n [name]      --name [name]       Provide a name for VM\n-d             --debug             Turn on debug mode\n", argv[i]);
+            return 1;
+        }
+    }
 
     // get program data
     FILE* file = NULL;
     size_t size;
 
     // get files size
-    file = fopen(argv[1], "rb");
+    file = fopen(filename, "rb");
     fseek(file, 0, SEEK_END);
     size = ftell(file);
     rewind(file);
@@ -51,27 +85,46 @@ int main(int argc, char *argv[]) {
     // in the data section you can store any data, null-terminated strings for example
     opcode = vm.ram[vm.pc] << 8 | vm.ram[vm.pc + 1];
 
-    text_section_start = opcode;
+    text_section_start = opcode; // this variable will be deleted in the future updates to make VM more separated
+                                 // from variables, that are not in the VM directly and that are not "realistic"
+                                 // to have in a such VM
     vm.pc = text_section_start;
+    vm.heap_p = size;
 
     while (1) {
         opcode = vm.ram[vm.pc] << 8 | vm.ram[vm.pc + 1]; // each opcode is 2 bytes just like in CHIP-8
         vm.pc += 2; // increase program counter
 
+        if (debug) {
+            printf(CYAN "Opcode: 0x%x\n" RESET, opcode);
+            printf(YELLOW "Address: 0x%x\n" RESET, vm.pc - 2);
+        }
+
         switch (opcode & 0xF000) {
             case 0x0000: // VM state control
-                printf("VM shutdown with exit code %d\n", vm.regs[opcode & 0x000F]);
-                return vm.regs[opcode & 0x000F];
-                break;
+                switch (opcode & 0x0F00) {
+                    case 0x0000: // Shutdown VM
+
+                        // 0x000n
+                        // n - register to use
+                        // value from register will be returned
+
+                        if (debug)
+                            printf(MAGENTA "VM shutdown with exit code %d\n" RESET, vm.regs[opcode & 0x000F]);
+                        return vm.regs[opcode & 0x000F];
+                    case 0x0100: // Return from a function
+                        vm.pc = vm.addres_call_reg;
+                        break;
+                }
+               
             case 0x1000: // math operations
                 switch (opcode & 0x0F00) {
                     case 0x0000: // addition
-                        /*
-                        0x10xy
-                        x - first operand & location to store output
-                        y - second operand
-                        if result is bigger than 0xFF, the overflow flag is set to one
-                        */
+
+                        // 0x10xy
+                        // x - first operand & location to store output
+                        // y - second operand
+                        // if result is bigger than 0xFF, the overflow flag is set to one
 
                         medium = vm.regs[(opcode & 0x00F0) >> 4] + vm.regs[opcode & 0x000F];
                         if (medium > 0xFF) {
@@ -82,12 +135,11 @@ int main(int argc, char *argv[]) {
                         break;
 
                     case 0x0100: // subtraction
-                        /*
-                        0x11xy
-                        x - first operand & location to store output
-                        y - second operand
-                        if result is below 0xFF, the overflow flag is set to one
-                        */
+
+                        // 0x11xy
+                        // x - first operand & location to store output
+                        // y - second operand
+                        // if result is below 0xFF, the overflow flag is set to one
 
                         medium = vm.regs[(opcode & 0x00F0) >> 4] - vm.regs[opcode & 0x000F];
                         if (medium < 0) {
@@ -97,12 +149,12 @@ int main(int argc, char *argv[]) {
                         vm.regs[(opcode & 0x00F0) >> 4] = medium & 0xFF;
                         break;
                     case 0x0200: // multiplication
-                        /*
-                        0x12xy
-                        x - first operand & location to store output
-                        y - second operand
-                        if result is bigger than 0xFF, the overflow flag is set to one
-                        */
+
+                        // 0x12xy
+                        // x - first operand & location to store output
+                        // y - second operand
+                        // if result is bigger than 0xFF, the overflow flag is set to one
+
 
                         medium = vm.regs[(opcode & 0x00F0) >> 4] * vm.regs[opcode & 0x000F];
                         if (medium > 0xFF) {
@@ -112,15 +164,16 @@ int main(int argc, char *argv[]) {
                         vm.regs[(opcode & 0x00F0) >> 4] = medium & 0xFF;
                         break;
                     case 0x0300: // division
-                        /*
-                        0x13xy
-                        x - first operand & location to store output
-                        y - second operand (divider)
-                        if divider is equals to zero, 'zero division' flag is set to one
-                        */
+
+                        // 0x13xy
+                        // x - first operand & location to store output
+                        // y - second operand (divider)
+                        // if divider is equals to zero, 'zero division' flag is set to one
 
                         if (vm.regs[opcode & 0x000F] == 0) {
                             vm.flags |= 0b01000000; // zero division flag
+                            if (debug)
+                                printf(YELLOW "Warning: division by zero" RESET);
                             break;
                         }
 
@@ -135,12 +188,11 @@ int main(int argc, char *argv[]) {
                         vm.regs[15] = div_remainder;
                         break;
                     case 0x0400: // compare two values
-                        /*
-                        0x14xy
-                        x - first operand
-                        y - second operand
-                        if x < y, flags |= 00010000, this is 'cmp' flag
-                        */
+
+                        // 0x14xy
+                        // x - first operand
+                        // y - second operand
+                        // if x < y, flags |= 00010000, this is 'cmp' flag
 
                         medium = vm.regs[(opcode & 0x00F0) >> 4] - vm.regs[opcode & 0x000F];
                         if (medium < 0)
@@ -149,28 +201,29 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             case 0x2000: // mov operation
-                /*
-                0x2xyy
-                x - in which register to store
-                yy - value to store
-                */
+
+                // 0x2xyy
+                // x - in which register to store
+                // yy - value to store
+
                 vm.regs[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
                 break;
-            case 0x3000: // jumps
-                /*
-                0x3nnn
-                nn - opcode nummber to jump
-                */
+            case 0x3000: // jumps if cmp flag = 1
+
+                // 0x3nnn
+                // nn - opcode nummber to jump
+
                 if (((vm.flags & 0b00010000) >> 4) == 1) {
                     vm.pc = (opcode & 0x0FFF);
                     vm.flags ^= 0b00010000;
                 }
                 break;
+
             case 0x4000: // print a null terminated string
-                /*
-                0x4nnn
-                nnn - addres of first element of null terminated string
-                */
+
+                // 0x4nnn
+                // nnn - addres of first element of null terminated string
+
                 vm.regs[14] = vm.ram[(opcode & 0x0FFF)];
                 vm.dc = 1;
                 while (vm.regs[14] != 0x00) {
@@ -179,6 +232,18 @@ int main(int argc, char *argv[]) {
                     vm.dc++;
                 }
                 break;
+
+            case 0x5000: // call a function
+                vm.addres_call_reg = vm.pc;
+                if (debug)
+                    printf("Return address: 0x%x\n", vm.addres_call_reg);
+                vm.pc = opcode & 0x0FFF;
+                break;
+                
+            default:
+                if (debug)
+                    printf(RED "Critical: no such opcode: 0x%x\n" RESET, opcode);
+                return 1;
         }
     }
     
