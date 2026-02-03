@@ -24,7 +24,6 @@ struct VirtualMachine {
     uint16_t pc; // program counter
     uint16_t dc; // data counter, vm uses it for printing strings/iterating
     uint16_t sp; // stack pointer
-    uint16_t heap_p; // pointer to heap;
 };
 
 int main(int argc, char *argv[]) {
@@ -57,8 +56,10 @@ int main(int argc, char *argv[]) {
         else if ((strcmp(argv[i], "-d") == 0) | (strcmp(argv[i], "--debug") == 0))
             debug = true;
         else {
-            // i dont know how to nake this message "normal"
-            printf("Invalid argument: %s\nHere are valid arguments:\n-n [name]      --name [name]       Provide a name for VM\n-d             --debug             Turn on debug mode\n", argv[i]);
+            printf("Invalid argument: %s\n"
+                   "Here are valid arguments:\n"
+                   "-n [name]      --name [name]       Provide a name for VM\n"
+                   "-d             --debug             Turn on debug mode\n", argv[i]);
             return 1;
         }
     }
@@ -89,16 +90,15 @@ int main(int argc, char *argv[]) {
                                  // from variables, that are not in the VM directly and that are not "realistic"
                                  // to have in a such VM
     vm.pc = text_section_start;
-    vm.heap_p = size;
+    vm.sp = 4095;
 
     while (1) {
         opcode = vm.ram[vm.pc] << 8 | vm.ram[vm.pc + 1]; // each opcode is 2 bytes just like in CHIP-8
         vm.pc += 2; // increase program counter
 
-        if (debug) {
+        if (debug)
             printf(CYAN "Opcode: 0x%x\n" RESET, opcode);
-            printf(YELLOW "Address: 0x%x\n" RESET, vm.pc - 2);
-        }
+        
 
         switch (opcode & 0xF000) {
             case 0x0000: // VM state control
@@ -239,6 +239,37 @@ int main(int argc, char *argv[]) {
                     printf("Return address: 0x%x\n", vm.addres_call_reg);
                 vm.pc = opcode & 0x0FFF;
                 break;
+            
+            case 0x6000: // stack operations
+                switch (opcode & 0x0F00) {
+                    case 0x0000: // push to stack
+                        // 0x600x
+                        // x - reg to use
+
+                        if ((vm.sp < size) & debug) {
+                            printf(RED "Critical: stack overflow\n" RESET);
+                            return 1;
+                        }
+
+                        vm.ram[vm.sp] = vm.regs[opcode & 0x000F];
+                        vm.sp--;
+                        break;
+
+                    case 0x0100: // pop from stack to reg
+                        // 0x610x
+                        // x - reg to use
+
+                        if ((vm.sp >= 4095) & debug) {
+                            printf(RED "Critical: there is nothing on stack\n" RESET);
+                            return 1;
+                        }
+
+                        vm.regs[opcode & 0x000F] = vm.ram[vm.sp + 1];
+                        vm.sp++;
+                        break;
+                }
+                break;
+                
                 
             default:
                 if (debug)
