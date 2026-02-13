@@ -277,12 +277,40 @@ int main(int argc, char *argv[]) {
                 // y - what to copy
                 vm.regs[opcode & 0x00F0] = vm.regs[opcode & 0x000F];
                 break;
+
             case 0x8000: // jump
                 // just a jump
                 // 0x8nnn
                 // nnn - address
                 vm.pc = opcode & 0x0FFF;
                 break;
+            
+            case 0x9000: // logic instructions
+
+                // 0x9abc
+                // a - instruction
+                // b - first operand & where to store
+                // c - second operand
+
+                switch (opcode & 0x0F00) {
+                    case 0x0000: // or
+                        vm.regs[opcode & 0x00F0] |= vm.regs[opcode & 0x000F];
+                        break;
+
+                    case 0x0100: // and
+                        vm.regs[opcode & 0x00F0] &= vm.regs[opcode & 0x000F];
+                        break;
+                    
+                    case 0x0200: // xor
+                        vm.regs[opcode & 0x00F0] ^= vm.regs[opcode & 0x000F];
+                        break;
+
+                    case 0x0300:
+                        // this instruction takes only one argument & ignores the c argument
+                        // bits of b register will be inversed
+                        vm.regs[opcode & 0x00F0] = !vm.regs[opcode & 0x00F0];
+                        break;
+                }
                 
             default:
                 if (debug)
