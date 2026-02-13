@@ -270,20 +270,19 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             
-                case 0x7000: // rmov
-                    // copies value from one register to another
-                    // 0x70xy
-                    // x - where to copy
-                    // y - what to copy
-                    vm.regs[opcode & 0x00F0] = vm.regs[opcode & 0x000F];
-                    break;
-
-                case 0x8000: // jump
-                    // just a jump
-                    // 0x8nnn
-                    // nnn - address
-                    vm.pc = opcode & 0x0FFF;
-                    break;
+            case 0x7000: // rmov
+                // copies value from one register to another
+                // 0x70xy
+                // x - where to copy
+                // y - what to copy
+                vm.regs[opcode & 0x00F0] = vm.regs[opcode & 0x000F];
+                break;
+            case 0x8000: // jump
+                // just a jump
+                // 0x8nnn
+                // nnn - address
+                vm.pc = opcode & 0x0FFF;
+                break;
                 
             default:
                 if (debug)

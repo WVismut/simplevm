@@ -59,7 +59,8 @@ int main(int argc, char *argv[]) {
     char *endptr;
     short lp = 0; // label pointer
 
-    uint32_t address;
+    uint32_t label_value;
+    int addres;
     struct label labels[MAX_LABELS];
     uint16_t opcode;
     uint16_t pc;
@@ -81,6 +82,36 @@ int main(int argc, char *argv[]) {
 
     while (true) {
         pc += 2;
+        if (fgets(buffer, sizeof(buffer), asm_file) == NULL)
+            break;
+
+        token = strtok(buffer, delimiters);
+
+        if (custom_compare(token, "label")) {
+
+            // this thing remembers the current address
+            // you can jump to a label using jmp instruction
+
+            if (lp > MAX_LABELS) {
+                printf("Critical error: too much labels\n");
+                return 1;
+            }
+
+            token = strtok(NULL, delimiters);
+            labels[lp].value = hash(token);
+            labels[lp].addres = pc;
+            pc -= 2;
+            lp++;
+            skip_because_label_already_exists:
+
+        }
+    }
+
+    // move the reading pointer to start
+    fseek(asm_file, 0, SEEK_SET);
+
+    pc = 0; // TEMP
+    while (true) {
         opcode = 0;
 
         if (fgets(buffer, sizeof(buffer), asm_file) == NULL) {
@@ -185,22 +216,34 @@ int main(int argc, char *argv[]) {
             opcode = high_endian(0x7000 | (general_purpose_vars[0] * 0x10) | (general_purpose_vars[1]));
             fwrite(&opcode, sizeof(opcode), 1, target_file);
 
-        } else if (custom_compare(token, "label")) {
+        } else if (custom_compare(token, "jmp")) {
 
-            // this thing remembers the current address
-            // you can jump to a label using jmp instruction
+            // jumps to a label
+            // usage: jmp label_name
 
-            if (lp > MAX_LABELS) {
-                printf("Failed: too much labels\n");
+            addres = -1;
+            token = strtok(NULL, delimiters);
+            label_value = hash(token);
+
+            // searches for label
+            for (int i = 0; i < lp; i++) {
+                if (labels[i].value == label_value) {
+                    addres = labels[i].addres;
+                    break;
+                }
+            }
+
+            // if label not found
+            if (addres == -1) {
+                printf("Critical error: label not found: %s (hash: %d)", token, label_value);
                 return 1;
             }
 
-            token = strtok(NULL, delimiters);
-            labels[lp].value = hash(token);
-            labels[lp].addres = pc;
-            pc -= 2;
-            lp++;
+            opcode = high_endian(0x8000 | addres);
+            fwrite(&opcode, sizeof(opcode), 1, target_file);
 
+        } else if (custom_compare(token, "label")) {
+            pc -= 2;
         } else {
             printf("Fatal error: no such instruction: \"%s\"\n", token);
             return 1;
